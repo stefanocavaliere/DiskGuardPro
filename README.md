@@ -1,59 +1,69 @@
-# 🛡️ DiskGuard Pro 2.0 — Drive Manager stile Samsung Magician (Windows 11)
+# 🛡️🤖 DiskGuard Pro 4.0 — Drive Manager stile Samsung Magician + AI locale (Windows 11)
 
-Interfaccia ispirata a **Samsung Magician**: sidebar di navigazione, selettore unità in alto,
-card **Stato di salute** (anello 0–100), **Temperatura** (valore + mini-grafico + allarmi),
-**Vita residua / TBW**, **Volumi** con barre d'uso, benchmark, diagnostica e recupero dati.
+Interfaccia ispirata a **Samsung Magician** + **motori AI 100% offline** (stdlib, nessun cloud/API key).
 
 ## Pagine
 
 | Voce sidebar | Contenuto |
 |---|---|
-| ◉ Drive Dashboard | Anello salute, temperatura + grafico, vita residua/TBW, volumi, info unità (modello, interfaccia, seriale, firmware), azioni rapide |
-| ⚡ Performance | Benchmark lettura/scrittura sequenziale con card dedicate + cronologia test |
-| 🩺 Diagnostica | Test rapido S.M.A.R.T. + self-test esteso, log, tabella attributi completa |
-| 🧲 Recupero Dati | Scansione rapida (cestino/tmp) + carving profondo (JPEG/PNG/PDF/GIF/ZIP), anteprima HEX, ripristino |
-| 🧰 Strumenti | Clona disco / immagine forense `.img`, soglia allarme temperatura, note firmware |
+| ◉ Drive Dashboard | Anello salute, temperatura + grafico, vita residua/TBW, volumi, info unità, **verdetto AI** |
+| ⚡ Performance | Benchmark lettura/scrittura + cronologia |
+| 🩺 Diagnostica | Test rapido S.M.A.R.T. + self-test esteso, tabella attributi |
+| 🗺 Analisi Disco | Layout GPT/MBR, **mappa superficie**, uso disco, latenza I/O 4K, copie shadow VSS |
+| 🤖 **AI Predittiva** | Rischio guasto 30/90/180gg, fattori, anomaly detection temp, deep scan frammenti, ranking file, ri-allenamento |
+| 🧲 Recupero Dati | 19 firme, checkbox tipi, validazione, anteprima immagini, hash, filtri, report CSV/HTML |
+| 🧰 Strumenti | Clona disco / immagine `.img`, soglia allarme, note firmware |
+
+## 🤖 Motori AI (`core/ai.py`, solo stdlib)
+
+1. **SMARTPredictor** — regressione logistica su 8 feature
+   (realloc, pending, uncorr, temp, ore, CRC, usura, cicli) con pesi pre-allenati
+   stile Backblaze. Output: probabilità 30/90/180gg + livello (Basso/Moderato/Alto/Critico)
+   + fattori spiegabili + azione consigliata.
+2. **Anomaly detection temperatura** — z-score + trend lineare sullo storico monitorato.
+3. **FragmentClassifier** — classifica blocchi *senza header* (frammenti JPEG/MP3,
+   TESTO, compresso/cifrato…) via entropia, marker, sync — per il deep scan.
+4. **Ranking file** — score AI 0–100 per prioritizzare il ripristino
+   (validità + tipo + dimensione plausibile).
+5. **Ri-allenamento** — `python tools/train_ai.py dati.csv` (CSV stile Backblaze:
+   `smart_5/197/198/194/9_raw + failure`) → scrive `core/ai_weights.json`
+   usato automaticamente dall'app.
 
 ## Requisiti (Windows 11)
 - Python 3.10+ (spunta *Add to PATH*)
-- **Esegui come Amministratore** per SMART reale e accesso disco raw
-- Facoltativo ma consigliato: [smartmontools](https://www.smartmontools.org) → `smartctl.exe`
+- **Esegui come Amministratore** per SMART reale e disco raw
+- [smartmontools](https://www.smartmontools.org) consigliato (`smartctl.exe`)
 
-## Avvio rapido
-1. Doppio clic su **`AVVIA_Windows11.bat`**, oppure:
+## Avvio
+Doppio clic su **`AVVIA_Windows11.bat`**, oppure:
 ```bat
 pip install -r requirements.txt
 python app.py
 ```
 
-## Creare il .exe
+## Build .exe
 ```bat
 pip install pyinstaller
 pyinstaller DiskGuardPro.spec
 ```
-`dist/DiskGuardPro.exe` (richiede privilegi admin, nessuna console).
 
-## Recupero dati — flusso consigliato
-1. **Strumenti → Clona disco** per creare l'immagine `.img` del disco.
-2. **Recupero Dati** → sorgente = immagine, destinazione = cartella.
-3. **Scansione profonda** → verifica → **Ripristina**.
+## Flusso forense consigliato
+Strumenti → immagine `.img` → Analisi (surface scan) → AI (deep scan frammenti + ranking) → Recupero → Report CSV/HTML.
 
 ## Struttura
 ```
 DiskGuardPro/
-├── app.py                # UI CustomTkinter stile Magician (Ring, Spark, 5 pagine)
-├── AVVIA_Windows11.bat   # setup + avvio
-├── DiskGuardPro.spec     # build pyinstaller → .exe (uac_admin)
-├── requirements.txt      # customtkinter, psutil, Pillow, wmi, pywin32
-└── core/
-    ├── disks.py          # rilevamento dischi (PowerShell + psutil)
-    ├── smart.py          # SMART via smartctl / PowerShell / demo
-    ├── recovery.py       # quick scan, carving, hex, clone raw
-    └── monitor.py        # monitor temperatura, CSV, benchmark
+├── app.py                # UI CustomTkinter (Ring, Spark, 7 pagine)
+├── AVVIA_Windows11.bat / DiskGuardPro.spec / requirements.txt
+├── core/
+│   ├── ai.py             # predizione, anomaly, classifier, ranking, retrain
+│   ├── analysis.py       # layout, surface, uso disco, I/O, VSS
+│   ├── recovery.py       # 19 firme, validazione, hash, preview, report
+│   ├── disks.py / smart.py / monitor.py
+└── tools/train_ai.py     # ri-allena il modello su CSV Backblaze
 ```
 
 ## Note
-- Linguaggio invariato: **Python** — per un'app leggera da .exe basta cambiare framework GUI
-  (tkinter → **CustomTkinter**): look moderno senza la pesantezza di Electron/Tauri.
-- Su Linux/Mac o senza permessi l'app gira in **modalità demo** con dati simulati.
-- Il carving ZIP/DOCX/MP4 (senza footer fisso) salva finestre da 8 MB: verifica i file recuperati.
+- Linguaggio invariato (**Python + CustomTkinter**): niente Electron, `.exe` leggero.
+- Fuori Windows/senza permessi: modalità demo con dati simulati.
+- L'AI è euristica locale, non diagnosi certificata: conferma sempre con backup + tool del produttore.
