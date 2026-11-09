@@ -42,8 +42,10 @@ if not _CTK_OK:
 from core.ui_pages import AppPagesMixin
 from core.ui_ops import AppOpsMixin
 
-from core.theme import (BG, SIDEBAR, CARD, CARD2, TXT, MUTED, ACCENT,
-                        GREEN, ORANGE, RED, FONTS, Ring, Spark, APP_TITLE)
+from core.theme import (BG, SIDEBAR, CARD, CARD2, TXT, MUTED, ACCENT, CYAN,
+                        GREEN, ORANGE, RED, PURPLE, FONTS, Ring, Spark,
+                        AttrBars, MultiChart, HealthTimeline, fmt_gb,
+                        health_color, APP_TITLE)
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -175,89 +177,158 @@ class App(AppPagesMixin, AppOpsMixin, ctk.CTk):
         kw.setdefault("corner_radius", 14)
         return ctk.CTkFrame(parent, **kw)
 
+    def _dash_head(self, card, title, subtitle=""):
+        top = ctk.CTkFrame(card, fg_color="transparent")
+        top.pack(fill="x", padx=16, pady=(14, 2))
+        ctk.CTkLabel(top, text=title.upper(), font=("Segoe UI", 10, "bold"),
+                     text_color=MUTED).pack(side="left")
+        if subtitle:
+            ctk.CTkLabel(top, text=subtitle, font=("Segoe UI", 9),
+                         text_color="#5b6678").pack(side="right")
+
     def _build_dash(self, f):
         wrap = ctk.CTkScrollableFrame(f, fg_color=BG)
         wrap.pack(fill="both", expand=True, padx=20, pady=10)
 
-        # riga 1: Salute | Temperatura | Vita residua/TBW
+        # ---- riga 1: 4 card ----
         row = ctk.CTkFrame(wrap, fg_color=BG)
         row.pack(fill="x", pady=(0, 12))
 
+        # 1) Salute: anello + score + badge + fattori top
         c1 = self._card(row)
         c1.pack(side="left", fill="both", expand=True, padx=(0, 6))
-        ctk.CTkLabel(c1, text="Stato di salute", font=FONTS["small"],
-                     text_color=MUTED).pack(anchor="w", padx=16, pady=(14, 0))
-        self.ring = Ring(c1, size=150)
-        self.ring.pack(pady=8)
+        self._dash_head(c1, "Stato di salute", "SMART")
+        mid1 = ctk.CTkFrame(c1, fg_color="transparent")
+        mid1.pack(fill="x", padx=8)
+        self.ring = Ring(mid1, size=132, width=13)
+        self.ring.pack(side="left", padx=(4, 2))
+        right1 = ctk.CTkFrame(mid1, fg_color="transparent")
+        right1.pack(side="left", fill="both", expand=True, padx=6)
+        self.health_badge = ctk.CTkLabel(right1, text="—", font=("Segoe UI", 13, "bold"),
+                                         fg_color=CARD2, corner_radius=8)
+        self.health_badge.pack(anchor="w", pady=(10, 4), ipadx=10, ipady=4)
+        self.health_lines = ctk.CTkLabel(right1, text="", font=FONTS["small"],
+                                         text_color=MUTED, justify="left")
+        self.health_lines.pack(anchor="w")
         self.health_detail = ctk.CTkLabel(c1, text="", font=FONTS["small"],
-                                         text_color=MUTED)
-        self.health_detail.pack(pady=(0, 14))
+                                         text_color=MUTED, wraplength=280, justify="left")
+        self.health_detail.pack(anchor="w", padx=16, pady=(2, 12))
 
+        # 2) Temperatura: valore + stato + spark avanzato + min/max
         c2 = self._card(row)
         c2.pack(side="left", fill="both", expand=True, padx=6)
-        ctk.CTkLabel(c2, text="Temperatura", font=FONTS["small"],
-                     text_color=MUTED).pack(anchor="w", padx=16, pady=(14, 0))
-        self.temp_big = ctk.CTkLabel(c2, text="—", font=("Segoe UI", 40, "bold"),
+        self._dash_head(c2, "Temperatura", "live")
+        trow = ctk.CTkFrame(c2, fg_color="transparent")
+        trow.pack(fill="x", padx=16)
+        self.temp_big = ctk.CTkLabel(trow, text="—", font=("Segoe UI", 38, "bold"),
                                     text_color="white")
-        self.temp_big.pack(pady=(6, 0))
-        self.temp_state = ctk.CTkLabel(c2, text="", font=FONTS["body"])
-        self.temp_state.pack()
-        self.spark = Spark(c2)
-        self.spark.pack(pady=8)
-        ctk.CTkLabel(c2, text="Ultimi 5 minuti • soglia allarme 55 °C",
-                     font=("Segoe UI", 9), text_color=MUTED).pack(pady=(0, 12))
+        self.temp_big.pack(side="left")
+        tcol = ctk.CTkFrame(trow, fg_color="transparent")
+        tcol.pack(side="left", padx=10)
+        self.temp_state = ctk.CTkLabel(tcol, text="", font=("Segoe UI", 11, "bold"))
+        self.temp_state.pack(anchor="w")
+        self.temp_minmax = ctk.CTkLabel(tcol, text="", font=FONTS["small"],
+                                       text_color=MUTED)
+        self.temp_minmax.pack(anchor="w")
+        self.spark = Spark(c2, w=250, h=72)
+        self.spark.pack(pady=6)
+        self.temp_ai = ctk.CTkLabel(c2, text="", font=("Segoe UI", 9),
+                                   text_color=MUTED, wraplength=280, justify="left")
+        self.temp_ai.pack(anchor="w", padx=16, pady=(0, 12))
 
+        # 3) Vita residua / TBW con gauge + stima
         c3 = self._card(row)
-        c3.pack(side="left", fill="both", expand=True, padx=(6, 0))
-        ctk.CTkLabel(c3, text="Vita residua / Scritture totali",
-                     font=FONTS["small"], text_color=MUTED).pack(
-                         anchor="w", padx=16, pady=(14, 0))
-        self.tbw_big = ctk.CTkLabel(c3, text="—", font=("Segoe UI", 30, "bold"),
+        c3.pack(side="left", fill="both", expand=True, padx=6)
+        self._dash_head(c3, "Vita residua", "TBW")
+        self.tbw_big = ctk.CTkLabel(c3, text="—", font=("Segoe UI", 28, "bold"),
                                    text_color="white")
-        self.tbw_big.pack(pady=(14, 0))
+        self.tbw_big.pack(pady=(8, 0))
         self.tbw_sub = ctk.CTkLabel(c3, text="", font=FONTS["body"],
                                    text_color=MUTED)
         self.tbw_sub.pack()
         self.wear_bar = ctk.CTkProgressBar(c3, width=220, progress_color=GREEN)
-        self.wear_bar.pack(pady=14)
+        self.wear_bar.pack(pady=(10, 4))
         self.wear_bar.set(0.9)
         self.wear_lbl = ctk.CTkLabel(c3, text="", font=FONTS["small"],
                                    text_color=MUTED)
-        self.wear_lbl.pack(pady=(0, 12))
+        self.wear_lbl.pack()
+        self.tbw_extra = ctk.CTkLabel(c3, text="", font=("Segoe UI", 9),
+                                     text_color=MUTED, wraplength=260, justify="left")
+        self.tbw_extra.pack(padx=16, pady=(2, 12))
 
-        # riga 2: volumi
+        # 4) Rischio AI: gauge + livello + azione
+        c4 = self._card(row)
+        c4.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        self._dash_head(c4, "Rischio AI 30gg", "offline")
+        self.ai_ring = Ring(c4, size=118, width=12)
+        self.ai_ring.pack(pady=(4, 2))
+        self.ai_level = ctk.CTkLabel(c4, text="—", font=("Segoe UI", 12, "bold"))
+        self.ai_level.pack()
+        self.ai_hint = ctk.CTkLabel(c4, text="", font=("Segoe UI", 9),
+                                   text_color=MUTED, wraplength=250, justify="center")
+        self.ai_hint.pack(padx=12, pady=(2, 4))
+        ctk.CTkButton(c4, text="Dettagli AI →", fg_color=CARD2, height=28,
+                      command=lambda: self.show("ai")).pack(pady=(0, 12))
+
+        # ---- riga 2: grafico combinato + barre SMART ----
+        row2 = ctk.CTkFrame(wrap, fg_color=BG)
+        row2.pack(fill="x", pady=(0, 12))
+        gc = self._card(row2)
+        gc.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        self._dash_head(gc, "Andamento temperatura & salute", "sessione")
+        self.multichart = MultiChart(gc, w=560, h=150)
+        self.multichart.pack(padx=12, pady=(2, 6))
+        self.timeline = HealthTimeline(gc)
+        self.timeline.pack(padx=12, pady=(0, 10))
+
+        sc = self._card(row2)
+        sc.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        self._dash_head(sc, "Attributi critici", "normalizzati")
+        self.attrbars = AttrBars(sc)
+        self.attrbars.pack(padx=12, pady=(2, 4), fill="x")
+        self.attr_note = ctk.CTkLabel(sc, text="", font=("Segoe UI", 9),
+                                      text_color=MUTED, wraplength=300, justify="left")
+        self.attr_note.pack(anchor="w", padx=16, pady=(0, 12))
+
+        # ---- riga 3: volumi ----
         vol = self._card(wrap)
         vol.pack(fill="x", pady=(0, 12))
-        ctk.CTkLabel(vol, text="Volumi", font=FONTS["h"],
-                     text_color="white").pack(anchor="w", padx=16, pady=(14, 4))
+        vhead = ctk.CTkFrame(vol, fg_color="transparent")
+        vhead.pack(fill="x", padx=16, pady=(14, 4))
+        ctk.CTkLabel(vhead, text="VOLUMI", font=("Segoe UI", 10, "bold"),
+                     text_color=MUTED).pack(side="left")
+        self.vol_total = ctk.CTkLabel(vhead, text="", font=FONTS["small"],
+                                     text_color=MUTED)
+        self.vol_total.pack(side="right")
         self.vol_box = ctk.CTkFrame(vol, fg_color="transparent")
         self.vol_box.pack(fill="x", padx=16, pady=(0, 14))
 
-        # riga 3: info drive + azioni
+        # ---- riga 4: info drive + azioni ----
         bottom = ctk.CTkFrame(wrap, fg_color=BG)
         bottom.pack(fill="x")
         info = self._card(bottom)
         info.pack(side="left", fill="both", expand=True, padx=(0, 6))
-        ctk.CTkLabel(info, text="Informazioni unità", font=FONTS["h"],
-                     text_color="white").pack(anchor="w", padx=16, pady=(14, 6))
+        self._dash_head(info, "Informazioni unità", "identità")
         self.info_grid = ctk.CTkFrame(info, fg_color="transparent")
         self.info_grid.pack(fill="x", padx=16, pady=(0, 14))
 
         acts = self._card(bottom)
         acts.pack(side="left", fill="y", padx=(6, 0))
         acts.configure(width=250)
-        ctk.CTkLabel(acts, text="Azioni rapide", font=FONTS["h"],
-                     text_color="white").pack(anchor="w", padx=16, pady=(14, 8))
+        ctk.CTkLabel(acts, text="AZIONI RAPIDE", font=("Segoe UI", 10, "bold"),
+                     text_color=MUTED).pack(anchor="w", padx=16, pady=(14, 8))
         for txt, cmd in [
             ("🩺  Esegui diagnostica", lambda: self.show("diag")),
             ("⚡  Test prestazioni", lambda: self.show("perf")),
+            ("🗺  Analisi superficie", lambda: self.show("analysis")),
+            ("🤖  Previsione AI", lambda: self.show("ai")),
             ("🧲  Recupera dati", lambda: self.show("rec")),
             ("📥  Esporta report", self.export_report),
         ]:
             ctk.CTkButton(acts, text=txt, anchor="w", fg_color=CARD2,
-                          hover_color="#2a3040", height=36,
-                          command=cmd).pack(fill="x", padx=14, pady=4)
-        ctk.CTkLabel(acts, text="", font=FONTS["small"]).pack(pady=6)
+                          hover_color="#2a3040", height=34,
+                          command=cmd).pack(fill="x", padx=14, pady=3)
+        ctk.CTkLabel(acts, text="", font=FONTS["small"]).pack(pady=4)
 
     # ================= PERFORMANCE =================
     def _build_perf(self, f):
