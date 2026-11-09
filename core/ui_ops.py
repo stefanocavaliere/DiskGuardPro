@@ -6,8 +6,8 @@ from datetime import datetime
 
 import customtkinter as ctk
 
-from core.theme import (BG, SIDEBAR, CARD, CARD2, TXT, MUTED, ACCENT,
-                        GREEN, ORANGE, RED, FONTS, Ring, Spark)
+from core.theme import (BG, SIDEBAR, CARD, CARD2, TXT, MUTED, ACCENT, CYAN,
+                        GREEN, ORANGE, RED, FONTS, Ring, Spark, fmt_gb)
 from core.disks import get_physical_disks
 from core.smart import read_smart, health_score
 from core.recovery import (quick_scan_deleted, carve_file, hex_preview,
@@ -72,47 +72,169 @@ class AppOpsMixin:
         self.after(0, lambda: self._smart_ready(d, attrs, info))
 
     # ---------- update dashboard ----------
+    # ---------- helpers formattazione dashboard ----------
+    @staticmethod
+    def _raw_int(a):
+        try:
+            return int(str(a.get("raw", 0)).split()[0])
+        except Exception:
+            return 0
+
     def _smart_ready(self, d, attrs, info):
         self.attrs, self.info = attrs, info
         temp = info.get("temp_c")
         score, label, key = health_score(attrs, temp)
         self.score = (score, label, key)
+        self.score_hist = getattr(self, "score_hist", []) + [score]
+        self.score_hist = self.score_hist[-60:]
         color = {"green": GREEN, "orange": ORANGE, "red": RED}[key]
+        by_id = {}
+        for a in attrs or []:
+            try:
+                by_id[int(a.get("id"))] = a
+            except Exception:
+                pass
 
-        self.ring.draw(score, color=color, center=str(score), sub=label)
+        # ---- card salute ----
+        self.ring.draw(score, color=color, center=str(score), sub=f"/100 {label}")
+        badge_txt = {"green": "● BUONO", "orange": "● ATTENZIONE", "red": "● CRITICO"}[key]
+        try:
+            self.health_badge.configure(text=f"{badge_txt}  {score}/100", text_color=color)
+        except Exception:
+            pass
+        crit = [a for a in (attrs or []) if a.get("status") == "FAIL"]
+        warn = [a for a in (attrs or []) if a.get("status") == "WARN"]
+        lines = []
+        if crit:
+            lines.append(f"❌ {len(crit)} attributi critici: " + ", ".join(a.get('name', '?') for a in crit[:2]))
+        if warn:
+            lines.append(f"⚠ {len(warn)} in attenzione: " + ", ".join(a.get('name', '?') for a in warn[:2]))
+        if not lines:
+            lines.append("✅ Tutti gli attributi entro soglia")
+        lines.append(f"⏱ {info.get('power_on_hours', '—')} ore • 🔄 {self._raw_int(by_id.get(12, {}))} accensioni")
+        self.health_lines.configure(text="\n".join(lines))
         try:
             verdict = ai_verdict(attrs, info)
         except Exception:
             verdict = ""
-        self.health_detail.configure(
-            text=f"{d.friendly_name}\n{info.get('power_on_hours', '—')} ore di accensione\n{verdict}")
+        self.health_detail.configure(text=f"{d.friendly_name} — {d.media_type}/{d.bus_type}\n{verdict}")
 
-        # temperatura
+        # ---- card temperatura ----
         if temp is None:
             self.temp_big.configure(text="n/d")
-            self.temp_state.configure(text="smartmontools o admin richiesti",
-                                      text_color=MUTED)
+            self.temp_state.configure(text="dati non disponibili", text_color=MUTED)
+            self.temp_minmax.configure(text="smartmontools o admin richiesti")
+            self.temp_ai.configure(text="")
         else:
-            self.temp_big.configure(text=f"{temp}°")
-            if temp >= 55:
-                st, c = "Critica — raffreddare / backup ora", RED
-            elif temp >= 50:
-                st, c = "Alta — controlla ventilazione", ORANGE
+            t = float(temp)
+            self.temp_big.configure(text=f"{t:.0f}°")
+            if t >= 55:
+                st, c = "CRITICA", RED
+                tip = "Raffreddare subito + backup ora"
+            elif t >= 50:
+                st, c = "ALTA", ORANGE
+                tip = "Controlla ventilazione e carico"
+            elif t <= 30:
+                st, c = "FREDDA", CYAN
+                tip = "Valore basso, nessun problema"
             else:
-                st, c = "Normale", GREEN
+                st, c = "NORMALE", GREEN
+                tip = f"Margine {(55 - t):.0f}°C alla soglia di allarme"
             self.temp_state.configure(text=st, text_color=c)
+            h = self.temps.get(d.device_id, [])
+            mm = f"min {min(h):.0f}° • max {max(h):.0f}°" if h else "in raccolta dati…"
+            self.temp_minmax.configure(text=mm)
+            try:
+                an = temp_anomaly(h) if h else {"ok": True, "msg": "raccolta dati…"}
+                self.temp_ai.configure(text=f"🤖 {an.get('msg', '')}")
+            except Exception:
+                pass
+            self.temp_big.configure(text_color=c if c != CYAN else "white")
 
-        # TBW / usura
+        # ---- card vita residua / TBW ----
         tbw, wear = self._tbw_wear(attrs, info)
+        tb_val = None
+        for a in attrs or []:
+            if a.get("id") == 241:
+                try:
+                    tb_val = int(str(a["raw"]).split()[0]) * 512 / 1e12
+                except Exception:
+                    pass
         self.tbw_big.configure(text=tbw)
-        self.tbw_sub.configure(text=f"{info.get('power_on_hours', '—')} ore • wear {wear}")
+        self.tbw_sub.configure(text=f"{info.get('power_on_hours', '—')} ore • usura {wear}")
         try:
             w = int(str(wear).rstrip("%")) if str(wear).rstrip("%").isdigit() else 90
         except Exception:
             w = 90
         self.wear_bar.set(max(0.02, w / 100))
-        self.wear_bar.configure(progress_color=GREEN if w > 50 else (ORANGE if w > 20 else RED))
-        self.wear_lbl.configure(text=f"Vita residua stimata: {w}%")
+        wcol = GREEN if w > 50 else (ORANGE if w > 20 else RED)
+        self.wear_bar.configure(progress_color=wcol)
+        self.wear_lbl.configure(text=f"Vita residua stimata: {w}%", text_color=wcol)
+        extra = []
+        if tb_val is not None:
+            extra.append(f"✍️ {tb_val:.1f} TB scritti (host writes)")
+        poh = info.get("power_on_hours")
+        try:
+            poh = int(poh)
+            yrs = poh / 24 / 365
+            extra.append(f"⏱ {poh:,} ore ≈ {yrs:.1f} anni di accensione")
+        except Exception:
+            pass
+        if warn or crit:
+            extra.append("⚠ degrado SMART: backup ravvicinati")
+        self.tbw_extra.configure(text=" • ".join(extra) if extra else "")
+
+        # ---- card rischio AI ----
+        try:
+            p = predict(attrs, info)
+            pcol = {"Basso": GREEN, "Moderato": ORANGE, "Alto": ORANGE, "Critico": RED}[p["risk"]]
+            self.ai_ring.draw(p["p30"], color=pcol, center=f"{p['p30']}%")
+            self.ai_level.configure(text=p["risk"].upper(), text_color=pcol)
+            self.ai_hint.configure(text=f"90gg {p['p90']}% • 180gg {p['p180']}%\n{p['action'][:110]}")
+        except Exception as e:
+            self.ai_level.configure(text="n/d", text_color=MUTED)
+            self.ai_hint.configure(text=str(e)[:100])
+
+        # ---- barre attributi critici ----
+        def norm(aid, worst_raw, invert=True):
+            a = by_id.get(aid)
+            if not a:
+                return None
+            raw = self._raw_int(a)
+            try:
+                v = float(a.get("value", 100))
+            except Exception:
+                v = 100
+            return (a.get("name", f"ID {aid}")[:20], v,
+                    GREEN if a.get("status") == "OK" else (ORANGE if a.get("status") == "WARN" else RED))
+        items = [x for x in [norm(5, 50), norm(197, 20), norm(198, 20), norm(194, 60),
+                             norm(177, 100), norm(199, 100)] if x]
+        try:
+            self.attrbars.plot(items)
+        except Exception:
+            pass
+        bad_names = [a.get("name") for a in (crit + warn)[:3]]
+        self.attr_note.configure(
+            text=("Da monitorare: " + ", ".join(bad_names)) if bad_names
+            else "Valori normalizzati 0–100 (soglia critica < soglia SMART). Tutto nella norma.")
+
+        # ---- grafico combinato ----
+        try:
+            h = self.temps.get(d.device_id, [])[-60:]
+            self.multichart.plot(h, self.score_hist[-len(h):] if h else self.score_hist[-60:],
+                                 alert=self.monitor.alert_temp)
+            tl = []
+            if h:
+                step = max(1, len(h) // 8)
+                for i in range(0, len(h), step):
+                    v = h[i]
+                    tl.append((f"{v:.0f}°", "red" if v >= 55 else ("orange" if v >= 50 else "green")))
+            else:
+                tl = [("raccolta dati…", "gray")]
+            self.timeline.plot(tl)
+            self.spark.plot(h, alert=self.monitor.alert_temp)
+        except Exception:
+            pass
 
         # volumi
         for wdg in self.vol_box.winfo_children():
@@ -123,37 +245,56 @@ class AppOpsMixin:
         ]
         if not vols:
             vols = [v for v in self.all_disks if v.media_type == "Logico"][:2]
+        tot_u = sum(v.used_gb for v in vols)
+        tot_s = sum(v.size_gb for v in vols) or 1
+        try:
+            self.vol_total.configure(
+                text=f"{len(vols)} volumi • {fmt_gb(tot_u)} usati su {fmt_gb(tot_s)} "
+                     f"({tot_u/tot_s*100:.0f}% occupato)")
+        except Exception:
+            pass
         for v in vols:
             row = ctk.CTkFrame(self.vol_box, fg_color="transparent")
-            row.pack(fill="x", pady=4)
+            row.pack(fill="x", pady=5)
             pct = (v.used_gb / v.size_gb) if v.size_gb else 0
-            ctk.CTkLabel(row, text=f"{v.mount or v.device_id}  {v.filesystem}",
-                         font=FONTS["body"], width=150, anchor="w").pack(side="left")
+            dot = "🟢" if pct < 0.75 else ("🟠" if pct < 0.9 else "🔴")
+            ctk.CTkLabel(row, text=f"{dot} {v.mount or v.device_id}",
+                         font=("Segoe UI", 12, "bold"), width=90, anchor="w").pack(side="left")
+            ctk.CTkLabel(row, text=f"{v.filesystem}", font=FONTS["small"],
+                         text_color=MUTED, width=60).pack(side="left")
             bar = ctk.CTkProgressBar(row, width=320,
-                                    progress_color=ACCENT if pct < 0.85 else ORANGE)
+                                    progress_color=ACCENT if pct < 0.75 else (ORANGE if pct < 0.9 else RED))
             bar.pack(side="left", padx=10)
             bar.set(max(0.02, min(1, pct)))
-            ctk.CTkLabel(row, text=f"{v.used_gb:.0f} / {v.size_gb:.0f} GB "
-                                  f"({pct*100:.0f}%)",
+            free = max(0, v.size_gb - v.used_gb)
+            ctk.CTkLabel(row, text=f"{fmt_gb(v.used_gb)} / {fmt_gb(v.size_gb)}  "
+                                  f"({pct*100:.0f}%)  •  liberi {fmt_gb(free)}",
                          font=FONTS["small"], text_color=MUTED).pack(side="left")
 
         # info grid
         for wdg in self.info_grid.winfo_children():
             wdg.destroy()
-        items = [("Modello", d.friendly_name),
-                 ("Interfaccia", f"{d.bus_type or info.get('interface', '—')}"),
-                 ("Capacità", f"{d.size_gb:.0f} GB"),
-                 ("Seriale", (info.get("serial") or d.serial or "—")),
-                 ("Firmware", (info.get("firmware") or d.firmware or "—")),
-                 ("Stato Windows", f"{d.health_status} / {d.operational_status or 'OK'}")]
+        items = [("💽 Modello", d.friendly_name),
+                 ("🔌 Interfaccia", f"{d.bus_type or info.get('interface', '—')}" +
+                  (f" • {d.device_id}" if d.device_id else "")),
+                 ("💾 Capacità", f"{fmt_gb(d.size_gb)}  ({d.size_gb:.0f} GB)"),
+                 ("🏷 Seriale", (info.get("serial") or d.serial or "—")),
+                 ("🧩 Firmware", (info.get("firmware") or d.firmware or "—")),
+                 ("🪟 Stato Windows", f"{d.health_status} / {d.operational_status or 'OK'}"),
+                 ("🌡 Temperatura", f"{temp} °C" if temp is not None else "n/d"),
+                 ("🤖 Rischio AI", f"{self.score[0]}/100 {self.score[1]}")]
         for i, (k, v) in enumerate(items):
-            r_, c_ = divmod(i, 2)
-            cell = ctk.CTkFrame(self.info_grid, fg_color="transparent")
-            cell.grid(row=r_, column=c_, sticky="w", padx=(0, 30), pady=3)
-            ctk.CTkLabel(cell, text=k, font=FONTS["small"],
+            r_, c_ = divmod(i, 4)
+            cell = ctk.CTkFrame(self.info_grid, fg_color=CARD2, corner_radius=8)
+            cell.grid(row=r_, column=c_, sticky="ew", padx=(0, 8), pady=4, ipadx=8, ipady=6)
+            ctk.CTkLabel(cell, text=k, font=("Segoe UI", 9, "bold"),
                          text_color=MUTED).pack(anchor="w")
-            ctk.CTkLabel(cell, text=str(v)[:42], font=FONTS["body"],
+            ctk.CTkLabel(cell, text=str(v)[:40], font=FONTS["body"],
                          text_color="white").pack(anchor="w")
+        try:
+            self.info_grid.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        except Exception:
+            pass
         if info.get("demo"):
             ctk.CTkLabel(self.info_grid,
                          text="⚠ Modalità demo: su Windows come admin + smartmontools vedrai valori reali.",
@@ -230,9 +371,15 @@ class AppOpsMixin:
                 self.temps.setdefault(dev, []).append(t)
                 self.temps[dev] = self.temps[dev][-60:]
             if self.current:
-                h = self.temps.get(self.current.device_id, [])
-                if h:
+                h = self.temps.get(self.current.device_id, [])[-60:]
+                if h and hasattr(self, "spark"):
                     self.spark.plot(h, alert=self.monitor.alert_temp)
+                    self.multichart.plot(h, getattr(self, "score_hist", [])[-len(h):] or [self.score[0]] * len(h),
+                                         alert=self.monitor.alert_temp)
+                    try:
+                        self.temp_minmax.configure(text=f"min {min(h):.0f}° • max {max(h):.0f}° • ora {h[-1]:.0f}°")
+                    except Exception:
+                        pass
         except Exception:
             pass
         self.after(5000, self._tick)
