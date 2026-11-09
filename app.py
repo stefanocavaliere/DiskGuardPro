@@ -16,7 +16,16 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import customtkinter as ctk
+try:
+    import customtkinter as ctk
+    from importlib.metadata import version as _pkg_version
+    _CTK_VER = _pkg_version("customtkinter")
+    _CTK_OK = tuple(int(x) for x in _CTK_VER.split(".")[:2]) >= (5, 2)
+except Exception:
+    ctk, _CTK_VER, _CTK_OK = None, "?", False
+
+if ctk is None:
+    sys.exit("ERRORE: customtkinter non installato. Esegui: pip install -r requirements.txt")
 
 from core.disks import get_physical_disks
 from core.smart import read_smart, health_score
@@ -27,6 +36,9 @@ from core.monitor import TempMonitor, disk_benchmark
 from core.analysis import (get_layout, surface_scan, disk_usage,
                            io_latency_test, get_shadow_copies)
 from core.ai import predict, ai_verdict, temp_anomaly, scan_unknown, rank_files
+if not _CTK_OK:
+    sys.exit(f"ERRORE: customtkinter {_CTK_VER} non supportato (serve >=5.2,<6). "
+               "Esegui: pip install -r requirements.txt")
 from core.ui_pages import AppPagesMixin
 from core.ui_ops import AppOpsMixin
 
