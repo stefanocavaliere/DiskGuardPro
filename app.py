@@ -26,6 +26,7 @@ from core.recovery import (quick_scan_deleted, carve_file, hex_preview,
 from core.monitor import TempMonitor, disk_benchmark
 from core.analysis import (get_layout, surface_scan, disk_usage,
                            io_latency_test, get_shadow_copies)
+from core.ai import predict, ai_verdict, temp_anomaly, scan_unknown, rank_files
 
 # ---------- tema stile Magician ----------
 BG = "#0e1013"        # sfondo app
@@ -155,7 +156,7 @@ class App(ctk.CTk):
                             font=("Segoe UI", 17, "bold"), text_color="white",
                             anchor="w")
         logo.pack(fill="x", padx=18, pady=(20, 2))
-        ctk.CTkLabel(self.side, text="DRIVE MANAGER  v3.0",
+        ctk.CTkLabel(self.side, text="DRIVE MANAGER  v4.0",
                      font=("Segoe UI", 9), text_color=MUTED, anchor="w").pack(
                          fill="x", padx=18, pady=(0, 18))
 
@@ -165,6 +166,7 @@ class App(ctk.CTk):
             ("perf", "⚡", "Performance"),
             ("diag", "🩺", "Diagnostica"),
             ("analysis", "🗺", "Analisi Disco"),
+            ("ai", "🤖", "AI Predittiva"),
             ("rec", "🧲", "Recupero Dati"),
             ("tools", "🧰", "Strumenti"),
         ]:
@@ -204,13 +206,14 @@ class App(ctk.CTk):
 
         # pagine
         self.pages = {}
-        for key in ["dash", "perf", "diag", "analysis", "rec", "tools"]:
+        for key in ["dash", "perf", "diag", "analysis", "ai", "rec", "tools"]:
             f = ctk.CTkFrame(self.main, fg_color=BG)
             self.pages[key] = f
         self._build_dash(self.pages["dash"])
         self._build_perf(self.pages["perf"])
         self._build_diag(self.pages["diag"])
         self._build_analysis(self.pages["analysis"])
+        self._build_ai(self.pages["ai"])
         self._build_rec(self.pages["rec"])
         self._build_tools(self.pages["tools"])
 
@@ -476,6 +479,104 @@ class App(ctk.CTk):
                                     text_color=TXT, font=FONTS["mono"])
         self.io_box.pack(fill="both", expand=True, padx=16, pady=(0, 14))
 
+    # ================= AI PREDITTIVA =================
+    def _build_ai(self, f):
+        wrap = ctk.CTkScrollableFrame(f, fg_color=BG)
+        wrap.pack(fill="both", expand=True, padx=20, pady=10)
+        ctk.CTkLabel(wrap, text="AI Predittiva — offline",
+                     font=FONTS["title"], text_color="white").pack(anchor="w")
+        ctk.CTkLabel(wrap, text="Predizione guasto (logistica su feature SMART stile Backblaze) · anomaly detection temperatura · classifica frammenti sconosciuti · ranking file recuperati. Nessun cloud, nessuna API key.",
+                     font=FONTS["small"], text_color=MUTED, wraplength=1000,
+                     justify="left").pack(anchor="w", pady=(0, 10))
+
+        # riga 1: rischio + gauge
+        row = ctk.CTkFrame(wrap, fg_color=BG)
+        row.pack(fill="x", pady=(0, 10))
+        rc = self._card(row)
+        rc.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        ctk.CTkLabel(rc, text="Rischio guasto stimato", font=FONTS["small"],
+                     text_color=MUTED).pack(anchor="w", padx=16, pady=(14, 0))
+        self.ai_gauge = Ring(rc, size=150)
+        self.ai_gauge.pack(pady=6)
+        self.ai_risk = ctk.CTkLabel(rc, text="—", font=FONTS["h"], text_color="white")
+        self.ai_risk.pack()
+        self.ai_action = ctk.CTkLabel(rc, text="", font=FONTS["small"],
+                                     text_color=MUTED, wraplength=320, justify="center")
+        self.ai_action.pack(padx=16, pady=(4, 12))
+        ctk.CTkButton(rc, text="🔄 Ricalcola AI", fg_color=ACCENT,
+                      hover_color="#1f5fd6", command=self.do_ai_refresh).pack(pady=(0, 14))
+
+        fc = self._card(row)
+        fc.pack(side="left", fill="both", expand=True, padx=(5, 0))
+        ctk.CTkLabel(fc, text="Fattori di rischio (peso × livello)", font=FONTS["h"],
+                     text_color="white").pack(anchor="w", padx=16, pady=(14, 4))
+        self.ai_factors = ctk.CTkScrollableFrame(fc, fg_color="transparent", height=200)
+        self.ai_factors.pack(fill="both", expand=True, padx=10, pady=(0, 12))
+
+        # riga 2: anomaly + classifier
+        row2 = ctk.CTkFrame(wrap, fg_color=BG)
+        row2.pack(fill="x")
+        an = self._card(row2)
+        an.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        ah = ctk.CTkFrame(an, fg_color="transparent")
+        ah.pack(fill="x", padx=16, pady=(12, 4))
+        ctk.CTkLabel(ah, text="Anomaly detection temperatura", font=FONTS["h"],
+                     text_color="white").pack(side="left")
+        ctk.CTkButton(ah, text="Analizza", width=100, fg_color=CARD2,
+                      command=self.do_ai_anomaly).pack(side="right")
+        self.ai_anom = ctk.CTkTextbox(an, height=110, fg_color=CARD2,
+                                      text_color=TXT, font=FONTS["mono"])
+        self.ai_anom.pack(fill="both", expand=True, padx=16, pady=(0, 14))
+
+        cl = self._card(row2)
+        cl.pack(side="left", fill="both", expand=True, padx=(5, 0))
+        ch = ctk.CTkFrame(cl, fg_color="transparent")
+        ch.pack(fill="x", padx=16, pady=(12, 4))
+        ctk.CTkLabel(ch, text="Classifica frammenti (deep scan AI)", font=FONTS["h"],
+                     text_color="white").pack(side="left")
+        ctk.CTkButton(ch, text="Scansiona", width=100, fg_color=CARD2,
+                      command=self.do_ai_fragments).pack(side="right")
+        self.ai_prog = ctk.CTkProgressBar(cl, width=200)
+        self.ai_prog.pack(fill="x", padx=16, pady=(0, 4))
+        self.ai_prog.set(0)
+        self.ai_frags = ctk.CTkTextbox(cl, height=110, fg_color=CARD2,
+                                       text_color=TXT, font=FONTS["mono"])
+        self.ai_frags.pack(fill="both", expand=True, padx=16, pady=(0, 14))
+
+        # riga 3: ranking + retrain
+        row3 = ctk.CTkFrame(wrap, fg_color=BG)
+        row3.pack(fill="x", pady=(10, 0))
+        rk = self._card(row3)
+        rk.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        rh = ctk.CTkFrame(rk, fg_color="transparent")
+        rh.pack(fill="x", padx=16, pady=(12, 4))
+        ctk.CTkLabel(rh, text="Ranking AI file recuperati", font=FONTS["h"],
+                     text_color="white").pack(side="left")
+        ctk.CTkButton(rh, text="Rank", width=90, fg_color=CARD2,
+                      command=self.do_ai_rank).pack(side="right")
+        self.ai_rank = ctk.CTkTextbox(rk, height=120, fg_color=CARD2,
+                                      text_color=TXT, font=FONTS["mono"])
+        self.ai_rank.pack(fill="both", expand=True, padx=16, pady=(0, 14))
+
+        rt = self._card(row3)
+        rt.pack(side="left", fill="both", expand=True, padx=(5, 0))
+        ctk.CTkLabel(rt, text="Ri-allena modello (CSV Backblaze)", font=FONTS["h"],
+                     text_color="white").pack(anchor="w", padx=16, pady=(14, 2))
+        ctk.CTkLabel(rt, text="Colonne: smart_5/197/198/194/9_raw + failure (1=guasto).",
+                     font=FONTS["small"], text_color=MUTED).pack(anchor="w", padx=16)
+        self.train_var = tk.StringVar()
+        ctk.CTkEntry(rt, textvariable=self.train_var, fg_color=CARD2,
+                     border_width=0, placeholder_text="percorso CSV…").pack(
+                         fill="x", padx=16, pady=8)
+        brow = ctk.CTkFrame(rt, fg_color="transparent")
+        brow.pack(fill="x", padx=16, pady=(0, 14))
+        ctk.CTkButton(brow, text="Sfoglia…", width=90, fg_color="#2a3040",
+                      command=self._pick_train).pack(side="left")
+        ctk.CTkButton(brow, text="🧠 Allena", fg_color=ACCENT,
+                      hover_color="#1f5fd6", command=self.do_train).pack(side="left", padx=8)
+        self.train_msg = ctk.CTkLabel(rt, text="", font=FONTS["small"], text_color=MUTED)
+        self.train_msg.pack(anchor="w", padx=16, pady=(0, 10))
+
     # ================= RECUPERO =================
     def _build_rec(self, f):
         wrap = ctk.CTkFrame(f, fg_color=BG)
@@ -669,8 +770,12 @@ class App(ctk.CTk):
         color = {"green": GREEN, "orange": ORANGE, "red": RED}[key]
 
         self.ring.draw(score, color=color, center=str(score), sub=label)
+        try:
+            verdict = ai_verdict(attrs, info)
+        except Exception:
+            verdict = ""
         self.health_detail.configure(
-            text=f"{d.friendly_name}\n{info.get('power_on_hours', '—')} ore di accensione")
+            text=f"{d.friendly_name}\n{info.get('power_on_hours', '—')} ore di accensione\n{verdict}")
 
         # temperatura
         if temp is None:
@@ -963,138 +1068,5 @@ class App(ctk.CTk):
             messagebox.showinfo("DiskGuard Pro",
                 "Seleziona una sorgente valida.\n\n"
                 "• Per provare: Strumenti → Clona disco per creare un'immagine.\n"
-                "• Oppure digita \\\\.\\PhysicalDrive0 ed esegui come Amministratore.")
-            return
-        self.scan_stop = {"stop": False}
-        types = [t for t, v in self.type_vars.items() if v.get()] or ["JPEG", "PNG", "PDF"]
-        self.set_status(f"Scansione profonda ({', '.join(types)})…")
-        def work():
-            res = carve_file(src, dst, types=types,
-                             progress=self._rprog, stop_flag=self.scan_stop)
-            self.after(0, lambda: self._show_rec(res, f"Carving completato in {dst}"))
-        threading.Thread(target=work, daemon=True).start()
 
-    def _show_rec(self, res, msg, only_valid=False, query=""):
-        self.recovered = res
-        self._rec_filtered = res
-        if only_valid:
-            tmp = []
-            for f in res:
-                ok, _ = validate_file(f.path, f.kind)
-                if ok:
-                    tmp.append(f)
-            self._rec_filtered = tmp
-        if query:
-            q = query.lower()
-            self._rec_filtered = [f for f in self._rec_filtered
-                                  if q in f.name.lower() or q in f.kind.lower()]
-        for wdg in self.rec_rows.winfo_children():
-            wdg.destroy()
-        for f in self._rec_filtered:
-            ok, det = validate_file(f.path, f.kind)
-            row = ctk.CTkFrame(self.rec_rows, fg_color=CARD2)
-            row.pack(fill="x", pady=1)
-            badge = "✓" if ok else "?"
-            bcol = GREEN if ok else ORANGE
-            b = ctk.CTkLabel(row, text=badge, width=26, font=("Segoe UI", 12, "bold"),
-                             text_color=bcol)
-            b.pack(side="left", padx=(8, 0))
-            ctk.CTkLabel(row, text=f.name, font=FONTS["mono"],
-                         width=280, anchor="w").pack(side="left", padx=8)
-            ctk.CTkLabel(row, text=f.kind, width=70,
-                         font=FONTS["small"]).pack(side="left")
-            mb = f"{f.size/1024:.1f} KB" if f.size < 1024*1024 else f"{f.size/1024/1024:.2f} MB"
-            ctk.CTkLabel(row, text=mb, width=90,
-                         font=FONTS["small"]).pack(side="left")
-            ctk.CTkLabel(row, text=det[:40], width=200, anchor="w",
-                         font=FONTS["small"], text_color=bcol).pack(side="left")
-            row.bind("<Double-Button-1>", lambda e, p=f.path: self.preview_file(p))
-            for ch in row.winfo_children():
-                ch.bind("<Double-Button-1>", lambda e, p=f.path: self.preview_file(p))
-        self.rec_count.configure(text=f"{len(self._rec_filtered)} / {len(res)} file")
-        self.set_status(f"{msg} — {len(res)} file.")
-        if not res:
-            from tkinter import messagebox
-            messagebox.showinfo("DiskGuard Pro", "Nessun file recuperabile trovato.")
-
-    def _sel_rec_path(self):
-        items = getattr(self, "_rec_filtered", self.recovered)
-        if not items:
-            return None
-        return items[0].path
-
-    def preview_file(self, p):
-        """Anteprima: immagine se possibile, altrimenti HEX."""
-        win = ctk.CTkToplevel(self)
-        win.title(f"Anteprima — {os.path.basename(p)}")
-        win.geometry("780x540")
-        im = image_preview(p)
-        if im is not None:
-            try:
-                import customtkinter as _ctk
-                from PIL import ImageTk as _ITk
-                tk_im = _ITk.PhotoImage(im)
-                lbl = ctk.CTkLabel(win, text="", image=tk_im)
-                lbl.image = tk_im
-                lbl.pack(pady=10)
-            except Exception:
-                pass
-            ok, det = validate_file(p, os.path.splitext(p)[1])
-            h = file_hashes(p)
-            ctk.CTkLabel(win, text=f"Validazione: {det}  •  MD5: {h.get('md5','—')[:24]}…",
-                         font=FONTS["small"], text_color=MUTED).pack()
-        ctk.CTkLabel(win, text="Dump esadecimale (primi 8 KB):",
-                     font=FONTS["small"], text_color=MUTED).pack(anchor="w", padx=10)
-        t = ctk.CTkTextbox(win, fg_color="#0b0e13", text_color="#a5f3a5",
-                           font=("Consolas", 9))
-        t.pack(fill="both", expand=True, padx=10, pady=10)
-        t.insert("1.0", hex_preview(p, 8192))
-
-    def do_hex(self):
-        from tkinter import messagebox
-        p = self._sel_rec_path()
-        if not p:
-            messagebox.showinfo("DiskGuard Pro", "Avvia prima una scansione.")
-            return
-        self.preview_file(p)
-
-    def do_filter_valid(self):
-        if not self.recovered:
-            from tkinter import messagebox
-            messagebox.showinfo("DiskGuard Pro", "Avvia prima una scansione.")
-            return
-        self._show_rec(self.recovered, "Filtro: solo file validi", only_valid=True)
-
-    def do_search(self):
-        if not self.recovered:
-            return
-        self._show_rec(self.recovered, "Ricerca", query=self.rec_filter.get().strip())
-
-    def do_report(self):
-        from tkinter import messagebox, filedialog
-        if not getattr(self, "_rec_filtered", None):
-            messagebox.showinfo("DiskGuard Pro", "Niente da esportare: avvia una scansione.")
-            return
-        base = filedialog.asksaveasfilename(defaultextension=".csv",
-                                            initialfile="diskguard_recupero.csv",
-                                            filetypes=[("CSV", "*.csv")])
-        if not base:
-            return
-        html = os.path.splitext(base)[0] + ".html"
-        r = findings_report(self._rec_filtered, base, html)
-        messagebox.showinfo("DiskGuard Pro",
-                            f"Report salvato:\n{r['csv']}\n{r['html']}\n({r['count']} file con hash MD5 e validazione)")
-
-    def do_restore(self):
-        from tkinter import messagebox, filedialog
-        import shutil
-        p = self._sel_rec_path()
-        if not p:
-            messagebox.showinfo("DiskGuard Pro", "Nessun file da ripristinare: avvia una scansione.")
-            return
-        dst = filedialog.asksaveasfilename(initialfile=os.path.basename(p))
-        if not dst:
-            return
-        try:
-
-[Showing lines 1-1098 of 1281 (50.0KB limit). Use offset=1099 to continue.]
+[Showing lines 1-1070 of 1519 (50.0KB limit). Use offset=1071 to continue.]
