@@ -6,6 +6,8 @@ from datetime import datetime
 
 import customtkinter as ctk
 
+from core.theme import (BG, SIDEBAR, CARD, CARD2, TXT, MUTED, ACCENT,
+                        GREEN, ORANGE, RED, FONTS, Ring, Spark)
 from core.disks import get_physical_disks
 from core.smart import read_smart, health_score
 from core.recovery import (quick_scan_deleted, carve_file, hex_preview,
@@ -14,7 +16,7 @@ from core.recovery import (quick_scan_deleted, carve_file, hex_preview,
 from core.monitor import disk_benchmark
 from core.analysis import (get_layout, surface_scan, disk_usage,
                            io_latency_test, get_shadow_copies)
-from core.ai import predict, scan_unknown, rank_files, temp_anomaly
+from core.ai import predict, ai_verdict, scan_unknown, rank_files, temp_anomaly
 from core.ai import retrain_from_csv
 
 
