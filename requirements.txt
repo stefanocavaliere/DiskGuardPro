@@ -3,11 +3,11 @@ exclude = ["*.pyc", "__pycache__", ".venv"]
 
 [project]
 name = "diskguard-pro"
-version = "2.0.0"
+version = "4.1.1"
 description = "DiskGuard Pro - Drive Manager stile Samsung Magician per Windows 11: salute SMART, temperatura, benchmark, recupero dati"
 requires-python = ">=3.10"
 dependencies = [
-  "customtkinter>=5.2.2",
+  "customtkinter>=5.2.2,<6",
   "psutil>=5.9.8",
   "Pillow>=10.0.0",
   "wmi>=1.5.1; sys_platform=='win32'",
