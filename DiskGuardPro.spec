@@ -6,8 +6,8 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=['wmi', 'win32com', 'customtkinter', 'psutil', 'matplotlib', 'PIL'],
+    datas=[('core', 'core')],
+    hiddenimports=['customtkinter', 'wmi', 'win32com', 'psutil', 'PIL'],
     hookspath=[],
     noarchive=False,
 )
@@ -24,7 +24,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,               # app con finestra (no console)
-    uac_admin=True,              # richiede privilegi admin (necessario per SMART/dischi raw)
+    uac_admin=True,              # richiede privilegi admin (SMART / dischi raw)
     icon=None,
     target_arch=None,
 )
