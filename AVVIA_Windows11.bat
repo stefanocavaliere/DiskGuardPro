@@ -11,7 +11,7 @@ if errorlevel 1 (
 )
 echo Installazione dipendenze...
 pip install --upgrade pip
-pip install customtkinter psutil Pillow wmi pywin32
+pip install "customtkinter>=5.2.2,<6" psutil Pillow wmi pywin32
 echo.
 echo ============================================================
 echo  DiskGuard Pro 2.0 pronto. Avvio...
