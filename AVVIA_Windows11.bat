@@ -1,0 +1,21 @@
+@echo off
+REM DiskGuard Pro - installazione e avvio su Windows 11
+REM Eseguire come Amministratore per funzioni complete
+title DiskGuard Pro - Setup
+python --version >nul 2>&1
+if errorlevel 1 (
+  echo [ERRORE] Python non trovato. Installa Python 3.10+ da https://www.python.org/downloads/
+  echo Ricorda di spuntare "Add python.exe to PATH".
+  pause
+  exit /b 1
+)
+echo Installazione dipendenze...
+pip install --upgrade pip
+pip install customtkinter psutil matplotlib Pillow wmi pywin32
+echo.
+echo ============================================================
+echo  DiskGuard Pro pronto. Avvio...
+echo  Suggerito: smartmontools da https://www.smartmontools.org
+echo ============================================================
+python app.py
+pause
